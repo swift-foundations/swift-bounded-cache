@@ -1,0 +1,37 @@
+// ===----------------------------------------------------------------------===//
+//
+// This source file is part of the swift-cache open source project
+//
+// Copyright (c) 2025 Coen ten Thije Boonkkamp and the swift-cache project authors
+// Licensed under Apache License v2.0
+//
+// See LICENSE for license information
+//
+// ===----------------------------------------------------------------------===//
+
+public import Async_Mutex_Primitives
+public import Async_Primitives
+public import Ownership_Primitives
+
+extension Cache {
+    /// Reference storage for the cache.
+    ///
+    /// Uses `Ownership.Mutable.Unchecked` to give Cache reference semantics
+    /// while keeping a struct interface. Thread safety is provided by the
+    /// wrapped `Async.Mutex`.
+    @usableFromInline
+    struct Storage: Sendable {
+        @usableFromInline
+        let _storage: Ownership.Mutable<Async.Mutex<State>>.Unchecked
+
+        @inlinable
+        init() {
+            self._storage = Ownership.Mutable.Unchecked(Async.Mutex(State()))
+        }
+
+        @inlinable
+        func withLock<T: ~Copyable, E: Swift.Error>(_ body: (inout sending State) throws(E) -> sending T) throws(E) -> sending T {
+            try _storage.mutable.value.withLock(body)
+        }
+    }
+}

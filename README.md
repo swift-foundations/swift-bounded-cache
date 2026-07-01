@@ -1,284 +1,82 @@
-# swift-bounded-cache
+# Cache Primitives
 
-[![CI](https://github.com/coenttb/swift-bounded-cache/workflows/CI/badge.svg)](https://github.com/coenttb/swift-bounded-cache/actions/workflows/ci.yml)
 ![Development Status](https://img.shields.io/badge/status-active--development-blue.svg)
+[![CI](https://github.com/swift-primitives/swift-cache-primitives/actions/workflows/ci.yml/badge.svg)](https://github.com/swift-primitives/swift-cache-primitives/actions/workflows/ci.yml)
 
-A high-performance LRU cache implementation in Swift with automatic eviction and type-safe operations.
+`Cache<Key, Value>` — a thread-safe, compute-if-absent async cache. `value(for:compute:)` returns a cached value, or runs the async compute closure on a miss and stores the result. Concurrent callers requesting the same missing key **coalesce onto a single in-flight computation** rather than each running the work — so a burst of cache misses for one key does the expensive work once, not N times.
 
-## Overview
+---
 
-swift-bounded-cache provides a dictionary-like structure with a maximum capacity that automatically evicts the least recently used (LRU) entries when full. It offers O(1) operations for insertions, lookups, and removals with minimal memory overhead.
+## Key Features
 
-```swift
-import BoundedCache
+- **Compute-if-absent** — `value(for:compute:)` runs the async closure only on a miss; hits return immediately.
+- **Request coalescing** — concurrent misses for the same key await one shared computation (no thundering herd, no duplicate work).
+- **Typed throws** — fallible computation surfaces as `Cache.Error`; a failed computation does not poison later attempts.
+- **`Sendable`** — safe to share across tasks; `Key: Hashable & Sendable`, `Value: Sendable`.
 
-// Create a cache with maximum 100 items
-let cache = BoundedCache<String, Int>(capacity: 100)
-
-// Insert items - automatically evicts oldest when capacity is reached
-cache.insert(42, forKey: "answer")
-cache.insert(100, forKey: "century")
-
-// Retrieve items - accessing updates LRU order
-if let value = cache.getValue(forKey: "answer") {
-    print("Found value: \(value)")
-}
-
-// Remove items when needed
-let removed = cache.removeValue(forKey: "century")
-
-print("Cache contains \(cache.count) items")
-```
-
-## Features
-
-- **Automatic eviction**: Enforces maximum capacity with LRU policy
-- **O(1) operations**: Fast insertions, lookups, and removals using dictionary and array
-- **Type-safe**: Generic over both key (Hashable) and value types
-- **Reference semantics**: Class-based design for efficient sharing
-- **Filtering**: Keep only items matching criteria
-- **Minimum capacity enforcement**: Capacity clamped to minimum of 1
-
-## Installation
-
-Add swift-bounded-cache to your Swift package dependencies:
-
-```swift
-dependencies: [
-    .package(url: "https://github.com/coenttb/swift-bounded-cache", from: "0.0.1")
-]
-```
+---
 
 ## Quick Start
 
 ```swift
-import BoundedCache
+import Cache_Primitives
 
-// Create a cache
-let cache = BoundedCache<String, Int>(capacity: 50)
+let cache = Cache<String, Int>()
 
-// Add items
-cache.insert(1, forKey: "one")
-cache.insert(2, forKey: "two")
-
-// Retrieve items (updates LRU order)
-if let value = cache.getValue(forKey: "one") {
-    print("Value: \(value)")
+// Compute-if-absent: the closure runs once per key. Concurrent callers for the
+// same key await the single in-flight computation rather than duplicating it.
+let timeout = try await cache.value(for: "config.timeout") {
+    try await fetchTimeout()        // your async work — only runs on a miss
 }
-
-// Check count
-print("Cache contains \(cache.count) items")
 ```
 
-## Usage Examples
+---
 
-### LRU Eviction Policy
-
-The cache maintains access order automatically:
+## Installation
 
 ```swift
-let cache = BoundedCache<String, Int>(capacity: 2)
-
-cache.insert(1, forKey: "first")
-cache.insert(2, forKey: "second")
-
-// Access "first" to make it more recently used
-_ = cache.getValue(forKey: "first")
-
-// Insert third item - "second" gets evicted (least recently used)
-cache.insert(3, forKey: "third")
-
-print(cache.getValue(forKey: "first"))  // Optional(1)
-print(cache.getValue(forKey: "second")) // nil (evicted)
-print(cache.getValue(forKey: "third"))  // Optional(3)
+dependencies: [
+    .package(url: "https://github.com/swift-primitives/swift-cache-primitives.git", branch: "main")
+]
 ```
-
-### Capacity Management
-
-Capacity is enforced automatically with minimum safeguards:
 
 ```swift
-// Capacity is clamped to minimum of 1
-let cache = BoundedCache<String, Int>(capacity: 0) // Actually becomes 1
-
-cache.insert(42, forKey: "answer")
-print(cache.count) // 1 - respects minimum capacity
+.target(
+    name: "App",
+    dependencies: [
+        .product(name: "Cache Primitives", package: "swift-cache-primitives")
+    ]
+)
 ```
 
-### Filtering Operations
+The package is pre-1.0 — depend on `branch: "main"` until `0.1.0` is tagged. Requires Swift 6.3 and macOS 26 / iOS 26 / tvOS 26 / watchOS 26 / visionOS 26 (or the corresponding Linux / Windows toolchain).
 
-Keep only items that match your criteria:
+---
 
-```swift
-let cache = BoundedCache<String, Int>(capacity: 10)
+## Platform Support
 
-// Add various numbers
-cache.insert(1, forKey: "one")
-cache.insert(2, forKey: "two")
-cache.insert(3, forKey: "three")
-cache.insert(4, forKey: "four")
+| Platform         | CI  | Status       |
+|------------------|-----|--------------|
+| macOS 26         | Yes | Full support |
+| Linux            | Yes | Full support |
+| Windows          | Yes | Full support |
+| iOS/tvOS/watchOS | —   | Supported    |
+| Swift Embedded   | —   | Pending (nightly-toolchain follow-up) |
 
-// Keep only even numbers
-cache.filter { _, value in value % 2 == 0 }
-
-print(cache.count) // 2 (only "two" and "four" remain)
-```
-
-### User Session Cache
-
-```swift
-struct UserSession {
-    let userId: String
-    let token: String
-    let expiresAt: Date
-}
-
-class SessionManager {
-    private let cache = BoundedCache<String, UserSession>(capacity: 1000)
-
-    func store(session: UserSession) {
-        cache.insert(session, forKey: session.userId)
-    }
-
-    func getSession(for userId: String) -> UserSession? {
-        return cache.getValue(forKey: userId)
-    }
-
-    func cleanExpiredSessions() {
-        let now = Date()
-        cache.filter { _, session in
-            session.expiresAt > now
-        }
-    }
-}
-```
-
-### Database Query Cache
-
-```swift
-struct QueryResult {
-    let data: [String]
-    let timestamp: Date
-}
-
-class DatabaseCache {
-    private let cache = BoundedCache<String, QueryResult>(capacity: 500)
-    private let cacheTimeout: TimeInterval = 300 // 5 minutes
-
-    func getCachedResult(for query: String) -> [String]? {
-        guard let result = cache.getValue(forKey: query),
-              Date().timeIntervalSince(result.timestamp) < cacheTimeout else {
-            return nil
-        }
-        return result.data
-    }
-
-    func cacheResult(_ data: [String], for query: String) {
-        let result = QueryResult(data: data, timestamp: Date())
-        cache.insert(result, forKey: query)
-    }
-}
-```
-
-### HTTP Response Cache
-
-```swift
-import Foundation
-
-struct CachedResponse {
-    let data: Data
-    let contentType: String
-    let etag: String?
-}
-
-class HTTPCache {
-    private let cache = BoundedCache<URL, CachedResponse>(capacity: 200)
-
-    func cacheResponse(_ response: CachedResponse, for url: URL) {
-        cache.insert(response, forKey: url)
-    }
-
-    func getCachedResponse(for url: URL) -> CachedResponse? {
-        return cache.getValue(forKey: url)
-    }
-
-    func clearCache() {
-        cache.removeAll()
-    }
-}
-```
+---
 
 ## Related Packages
 
-### Used By
+- [`swift-async-primitives`](https://github.com/swift-primitives/swift-async-primitives) — the async coordination primitives the cache's in-flight-computation sharing is built on.
+- [`swift-dictionary-primitives`](https://github.com/swift-primitives/swift-dictionary-primitives) — the keyed storage behind the cache's entry table.
 
-- [swift-throttling](https://github.com/coenttb/swift-throttling): A Swift package for request throttling.
+---
+
+## Community
+
+<!-- BEGIN: discussion -->
+<!-- END: discussion -->
 
 ## License
 
-This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
-
-## API Reference
-
-### Initialization
-
-```swift
-init(capacity: Int)
-```
-
-Creates a new cache with specified capacity (minimum 1).
-
-### Core Operations
-
-```swift
-func insert(_ value: Value, forKey key: Key)
-```
-
-Inserts or updates value for key. Updates LRU order if key exists. Evicts least recently used item if at capacity.
-
-```swift
-func getValue(forKey key: Key) -> Value?
-```
-
-Retrieves value and updates LRU order. Returns nil if key not found.
-
-```swift
-func removeValue(forKey key: Key) -> Value?
-```
-
-Removes and returns value for key. Returns nil if key not found.
-
-```swift
-func removeAll()
-```
-
-Removes all items from cache.
-
-```swift
-func filter(_ isIncluded: (Key, Value) throws -> Bool) rethrows
-```
-
-Keeps only items matching predicate.
-
-### Properties
-
-```swift
-var count: Int { get }
-```
-
-Current number of items in cache.
-
-```swift
-var isEmpty: Bool { get }
-```
-
-Returns true if cache contains no items.
-
-## Requirements
-
-- Swift 5.10+
-- Platforms: macOS, iOS, tvOS, watchOS, Linux
+Apache 2.0. See [LICENSE.md](LICENSE.md).
