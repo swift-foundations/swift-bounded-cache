@@ -266,7 +266,7 @@ extension Cache {
         }
 
         // Publish result under lock, collect resumptions
-        var resumptions = Array<Column.Heap<Async.Waiter.Resumption>>(initialCapacity: 0)
+        var resumptions = __Array<Column.Heap<Async.Waiter.Resumption>>(initialCapacity: 0)
         _storage.withLock { _ in
             guard case .computing(let waiters) = entry.state else {
                 // State changed unexpectedly - shouldn't happen
@@ -370,7 +370,7 @@ extension Cache {
     ///   - key: The key to cache under.
     @inlinable
     public func setValue(_ value: Value, for key: Key) {
-        var resumptions = Array<Column.Heap<Async.Waiter.Resumption>>(initialCapacity: 0)
+        var resumptions = __Array<Column.Heap<Async.Waiter.Resumption>>(initialCapacity: 0)
         _storage.withLock { state in
             // Check for existing waiters
             if let existingEntry = state.entries[key],
@@ -400,7 +400,7 @@ extension Cache {
     @discardableResult
     @inlinable
     public func removeValue(for key: Key) -> Value? {
-        var resumptions = Array<Column.Heap<Async.Waiter.Resumption>>(initialCapacity: 0)
+        var resumptions = __Array<Column.Heap<Async.Waiter.Resumption>>(initialCapacity: 0)
         let value = _storage.withLock { state -> Value? in
             guard let entry = state.entries.removeValue(forKey: key) else {
                 return nil
@@ -433,7 +433,7 @@ extension Cache {
     /// Any in-progress computations will have their waiters cancelled.
     @inlinable
     public func removeAll() {
-        var resumptions = Array<Column.Heap<Async.Waiter.Resumption>>(initialCapacity: 0)
+        var resumptions = __Array<Column.Heap<Async.Waiter.Resumption>>(initialCapacity: 0)
         _storage.withLock { state in
             for (_, entry) in state.entries {
                 if case .computing(let waiters) = entry.state {
