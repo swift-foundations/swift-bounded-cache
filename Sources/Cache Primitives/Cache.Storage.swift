@@ -25,13 +25,15 @@ extension Cache {
         let _storage: Ownership.Mutable<Async.Mutex<State>>.Unchecked
 
         @inlinable
-        init() {
+        package init() {
             self._storage = Ownership.Mutable.Unchecked(Async.Mutex(State()))
         }
+    }
+}
 
-        @inlinable
-        func withLock<T: ~Copyable, E: Swift.Error>(_ body: (inout sending State) throws(E) -> sending T) throws(E) -> sending T {
-            try _storage.mutable.value.withLock(body)
-        }
+extension Cache.Storage {
+    @inlinable
+    package func withLock<T: ~Copyable, E: Swift.Error>(_ body: (inout sending Cache.State) throws(E) -> sending T) throws(E) -> sending T {
+        try _storage.mutable.value.withLock(body)
     }
 }

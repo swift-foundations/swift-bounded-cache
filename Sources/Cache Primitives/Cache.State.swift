@@ -17,7 +17,7 @@ extension Cache {
         var entries: [Key: Entry]
 
         @inlinable
-        init() {
+        package init() {
             self.entries = [:]
         }
     }

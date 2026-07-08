@@ -39,15 +39,6 @@ extension Cache {
     ///   `Experiments/cache-effect-type-nesting/` for 8 approaches tested
     ///   (Swift 6.2.4) and why this workaround is necessary.
     public struct Evict: Effect.`Protocol`, Sendable {
-        /// The effect's argument type: the evicted key, value, and reason.
-        public typealias Arguments = (key: Key, value: _Value, reason: Reason)
-
-        /// The effect's produced value type — none; eviction is fire-and-forget.
-        public typealias Value = Void
-
-        /// The effect's failure type — none; eviction cannot fail.
-        public typealias Failure = Never
-
         /// The key that was evicted.
         public let key: Key
 
@@ -56,11 +47,6 @@ extension Cache {
 
         /// The reason for eviction.
         public let reason: Reason
-
-        /// The arguments for this effect.
-        public var arguments: (key: Key, value: _Value, reason: Reason) {
-            (key, value, reason)
-        }
 
         /// Creates an eviction effect.
         ///
@@ -74,23 +60,39 @@ extension Cache {
             self.value = value
             self.reason = reason
         }
+    }
+}
 
-        /// The reason a cache entry was evicted.
-        public enum Reason: Sendable, Equatable {
-            /// Entry was explicitly removed via `removeValue(for:)`.
-            case explicit
+extension Cache.Evict {
+    /// The effect's argument type: the evicted key, value, and reason.
+    public typealias Arguments = (key: Key, value: Cache._Value, reason: Reason)
 
-            /// Entry was removed due to capacity constraints.
-            case capacityLimit
+    /// The effect's produced value type — none; eviction is fire-and-forget.
+    public typealias Value = Void
 
-            /// Entry expired based on TTL policy.
-            case expired
+    /// The effect's failure type — none; eviction cannot fail.
+    public typealias Failure = Never
 
-            /// Entry was replaced by a new value.
-            case replaced
+    /// The arguments for this effect.
+    public var arguments: (key: Key, value: Cache._Value, reason: Reason) {
+        (key, value, reason)
+    }
 
-            /// Cache was cleared via `removeAll()`.
-            case cleared
-        }
+    /// The reason a cache entry was evicted.
+    public enum Reason: Sendable, Equatable {
+        /// Entry was explicitly removed via `removeValue(for:)`.
+        case explicit
+
+        /// Entry was removed due to capacity constraints.
+        case capacityLimit
+
+        /// Entry expired based on TTL policy.
+        case expired
+
+        /// Entry was replaced by a new value.
+        case replaced
+
+        /// Cache was cleared via `removeAll()`.
+        case cleared
     }
 }

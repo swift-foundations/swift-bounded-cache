@@ -31,12 +31,12 @@ extension Cache {
         var state: State
 
         @inlinable
-        init() {
+        package init() {
             self.state = .empty
         }
 
         @inlinable
-        init(state: State) {
+        package init(state: State) {
             self.state = state
         }
     }
