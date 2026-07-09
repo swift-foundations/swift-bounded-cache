@@ -15,8 +15,8 @@ import Testing
 
 // MARK: - Tests
 
-@Suite("Cache.Evict")
-struct CacheEvictTests {
+@Suite
+struct `Cache.Evict Tests` {
 
     @Test
     func `effect stores key, value, and reason`() {

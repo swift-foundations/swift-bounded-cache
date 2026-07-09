@@ -21,8 +21,8 @@ private struct TestError: Swift.Error, Sendable, Equatable {
 
 // MARK: - Tests
 
-@Suite("Cache.Compute")
-struct CacheComputeTests {
+@Suite
+struct `Cache.Compute Tests` {
 
     @Test
     func `effect stores key as arguments`() {
