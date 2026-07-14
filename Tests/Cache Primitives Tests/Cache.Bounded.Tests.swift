@@ -99,7 +99,7 @@ struct `Cache.Bounded Tests` {
         cache.insert(1, forKey: "a")
         cache.insert(2, forKey: "b")
         cache.insert(10, forKey: "a")  // replaces; "a" remains oldest
-        cache.insert(3, forKey: "c")   // evicts "a", not "b"
+        cache.insert(3, forKey: "c")  // evicts "a", not "b"
 
         #expect(cache.getValue(forKey: "a") == nil)
         #expect(cache.getValue(forKey: "b") == 2)
@@ -175,8 +175,8 @@ struct `Cache.Bounded Tests` {
         cache.insert(3, forKey: "c")
 
         cache.filter { key, _ in key != "a" }  // drops "a"; order is now b, c
-        cache.insert(4, forKey: "d")           // count 3, no eviction
-        cache.insert(5, forKey: "e")           // evicts "b" (oldest retained)
+        cache.insert(4, forKey: "d")  // count 3, no eviction
+        cache.insert(5, forKey: "e")  // evicts "b" (oldest retained)
 
         #expect(cache.getValue(forKey: "b") == nil)
         #expect(cache.getValue(forKey: "c") == 3)
