@@ -61,8 +61,12 @@ public import Storage_Contiguous_Primitives
 ///
 /// ## Cancellation
 ///
-/// Waiting tasks can be cancelled. If a computing task is cancelled,
-/// the entry transitions to failed state and waiters receive the error.
+/// Waiting tasks can be cancelled. Cancellation resumes the waiter promptly
+/// with `Cache.Error.cancelled` — it does not wait for the producer to
+/// publish, so a waiter is never stranded by a `compute` closure that never
+/// returns. If the computing task itself is cancelled (or otherwise fails),
+/// current waiters still receive that error, but the entry does not stay
+/// poisoned: it resets so the next request recomputes.
 public struct Cache<Key: Hashable & Sendable, Value: Sendable>: Sendable {
     @usableFromInline
     let _storage: Storage
@@ -111,8 +115,10 @@ extension Cache {
     /// ## Cancellation
     ///
     /// - Waiting tasks can be cancelled
-    /// - If the computing task is cancelled, the entry fails
-    /// - Waiters receive the cancellation error
+    /// - Cancellation resumes the waiter promptly with `.cancelled`, even if
+    ///   the producer's `compute` closure is still running (or hung)
+    /// - If the computing task is cancelled, current waiters receive the
+    ///   error, but the entry resets rather than staying poisoned
     ///
     /// - Parameters:
     ///   - key: The key to look up or compute for.
@@ -206,6 +212,22 @@ extension Cache {
                             }
 
                         case .computing(let waiters):
+                            // Defensive: if the task was already cancelled
+                            // before we reached registration (e.g. cancelled
+                            // synchronously as part of entering
+                            // `withTaskCancellationHandler`, before this
+                            // closure runs), do not enqueue - resume
+                            // immediately instead. `onCancel` firing
+                            // concurrently is safe: `flag.cancel()` is
+                            // idempotent, and a resulting
+                            // `pumpCancelledWaiters` call simply finds
+                            // nothing left to reap. See F-002.
+                            if flag.cancelled {
+                                return Async.Waiter.Resumption {
+                                    continuation.resume(returning: .failure(CancellationError()))
+                                }
+                            }
+
                             // Add ourselves to the waiter queue
                             let asyncContinuation = Async.Continuation<Entry.Waiters.Outcome> { outcome in
                                 continuation.resume(returning: outcome)
@@ -230,8 +252,13 @@ extension Cache {
                     resumption?.resume()
                 }
             } onCancel: {
-                // Set flag atomically - pump will process it
-                flag.cancel()
+                // Set the flag, then remove this waiter from the queue and
+                // resume it immediately with `.cancelled` - do not leave it
+                // stranded until the producer eventually publishes (which
+                // may never happen if `compute` hangs). See F-002.
+                if flag.cancel() {
+                    Task { self.pumpCancelledWaiters(entry: entry) }
+                }
             }
         } catch {
             throw .cancelled
@@ -243,8 +270,50 @@ extension Cache {
             return value
 
         case .failure(let error):
+            if error is CancellationError {
+                throw .cancelled
+            }
             throw .computeFailed(error)
         }
+    }
+}
+
+// MARK: - Cancellation Pump
+
+extension Cache {
+    /// Reaps and resumes cancelled waiters for a single entry immediately,
+    /// without waiting for the producer to publish.
+    ///
+    /// Called from `waitForValue`'s cancellation handler after a waiter's
+    /// flag transitions to cancelled. Without this pump, a waiter cancelled
+    /// while the producer's `compute` closure is still running (or hung)
+    /// would stay suspended until publish. Mirrors the reap-under-lock,
+    /// resume-outside-lock pattern `Async.Semaphore.pumpWaiters()` uses over
+    /// the same `Async.Waiter.Queue.Unbounded.reapFlagged(into:)` primitive.
+    /// See F-002.
+    @usableFromInline
+    func pumpCancelledWaiters(entry: Entry) {
+        var resumptions = __Array<Column.Heap<Async.Waiter.Resumption>>(initialCapacity: 0)
+        _storage.withLock { _ in
+            guard case .computing(let waiters) = entry.state else {
+                // Already published (or reset) - nothing left to reap.
+                return
+            }
+
+            var flagged = Async.Waiter.Queue.Drain<
+                Async.Waiter.Queue.Flagged<Entry.Waiters.Outcome, Void>
+            >()
+            waiters.queue.reapFlagged(into: &flagged)
+
+            while let flaggedEntry = flagged.dequeue() {
+                resumptions.append(
+                    flaggedEntry.resumption { _ in .failure(CancellationError()) }
+                )
+            }
+        }
+
+        // Resume outside lock
+        resumptions.drain { $0.resume() }
     }
 }
 
